@@ -602,6 +602,11 @@
     <string name="settings_download_download_order_by_asc_summary">下载全部画廊时正序下载</string>
     <string name="settings_download_sync_while_reading">观看时同步下载</string>
     <string name="settings_download_sync_while_reading_summary">在浏览未下载画廊时，自动将浏览到的图片保存到下载目录</string>
+
+    <string name="settings_download_save_as_cbz">保存为 CBZ 压缩包</string>
+    <string name="settings_download_save_as_cbz_summary">下载完成后将图片打包为 CBZ 格式（实验性）</string>
+    <string name="settings_download_archive_metadata">压缩包元数据</string>
+    <string name="settings_download_archive_metadata_summary">在压缩包内生成 ComicInfo.xml 元数据</string>
     <string name="settings_download_media_scan">允许媒体扫描</string>
     <string name="settings_download_media_scan_summary_on">请避免他人翻看你的图库应用</string>
     <string name="settings_download_media_scan_summary_off">大多数图库应用将不会显示下载目录中的图片</string>
@@ -617,6 +622,18 @@
     <string name="settings_download_clean_redundancy_done">完成冗余清理，共清理 %d 项</string>
     <string name="settings_download_clean_invalid_download_summary">清空任何无效的下载项，尤其是下载未完整的下载项，不会清空已完成的下载项</string>
     <string name="settings_download_clean_invalid_download">清空无效的下载项</string>
+
+    <string name="settings_download_convert_to_cbz">整理下载为 CBZ</string>
+    <string name="settings_download_convert_to_cbz_summary">将已完成下载的零散图片整理为 CBZ 压缩包以节省空间（实验性）</string>
+    <string name="settings_download_convert_to_cbz_started">正在整理…</string>
+    <string name="settings_download_convert_to_cbz_success">成功整理 %d 项</string>
+    <string name="settings_download_convert_to_cbz_failed">整理失败: %s</string>
+
+    <string name="settings_download_reload_metadata">重新加载元数据</string>
+    <string name="settings_download_reload_metadata_summary">为已下载的画廊重新生成 ComicInfo.xml（实验性）</string>
+    <string name="settings_download_reload_metadata_started">正在重新加载元数据…</string>
+    <string name="settings_download_reload_metadata_success">成功更新 %d 项元数据</string>
+    <string name="settings_download_reload_metadata_failed">重新加载元数据失败: %s</string>
 
     <string name="settings_advanced">高级</string>
     <string name="settings_advanced_save_parse_error_body">解析失败时保存页面内容</string>

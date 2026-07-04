@@ -99,6 +99,22 @@
         app:allowDividerAbove="true"
         app:iconSpaceReserved="false" />
 
+    <com.hippo.preference.SwitchPreference
+        android:defaultValue="false"
+        android:key="save_as_cbz"
+        android:summary="@string/settings_download_save_as_cbz_summary"
+        android:title="@string/settings_download_save_as_cbz"
+        app:allowDividerAbove="true"
+        app:iconSpaceReserved="false" />
+
+    <com.hippo.preference.SwitchPreference
+        android:defaultValue="true"
+        android:key="archive_metadata"
+        android:summary="@string/settings_download_archive_metadata_summary"
+        android:title="@string/settings_download_archive_metadata"
+        app:iconSpaceReserved="false"
+        app:allowDividerAbove="false" />
+
     <com.hippo.ehviewer.preference.RestoreDownloadPreference
         android:key="restore_download_items"
         android:summary="@string/settings_download_restore_download_items_summary"
@@ -117,6 +133,20 @@
         android:key="clean_invalid_download"
         android:summary="@string/settings_download_clean_invalid_download_summary"
         android:title="@string/settings_download_clean_invalid_download"
+        app:allowDividerAbove="true"
+        app:iconSpaceReserved="false" />
+
+    <Preference
+        android:key="convert_to_cbz"
+        android:summary="@string/settings_download_convert_to_cbz_summary"
+        android:title="@string/settings_download_convert_to_cbz"
+        app:allowDividerAbove="true"
+        app:iconSpaceReserved="false" />
+
+    <Preference
+        android:key="reload_metadata"
+        android:summary="@string/settings_download_reload_metadata_summary"
+        android:title="@string/settings_download_reload_metadata"
         app:allowDividerAbove="true"
         app:iconSpaceReserved="false" />
 </PreferenceScreen>

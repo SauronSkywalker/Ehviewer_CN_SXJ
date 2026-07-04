@@ -2,9 +2,11 @@ name: Build
 
 on:
   push:
-    branches: [ BiLi_PC_Gamer ]
+    branches:
+      - '**'
   pull_request:
-    branches: [ BiLi_PC_Gamer ]
+    branches:
+      - '**'
   workflow_dispatch:
 
 jobs:
@@ -20,6 +22,12 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: 21
+
+      - name: Setup Android SDK with NDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 11076708
+          ndk-version: 26.1.10909125
 
       - name: Build
         run: |

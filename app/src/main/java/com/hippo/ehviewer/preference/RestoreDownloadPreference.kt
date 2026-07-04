@@ -33,9 +33,11 @@ import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.client.EhEngine
 import com.hippo.ehviewer.client.EhUrl
 import com.hippo.ehviewer.client.data.GalleryInfo
+import com.hippo.ehviewer.dao.GalleryTags
 import com.hippo.ehviewer.download.DownloadManager
 import com.hippo.ehviewer.spider.SpiderInfo
 import com.hippo.ehviewer.spider.SpiderQueen
+import com.hippo.ehviewer.util.ComicInfoHelper
 import com.hippo.lib.yorozuya.IOUtils
 import com.hippo.unifile.UniFile
 import com.hippo.util.ExceptionUtils.throwIfFatal
@@ -108,31 +110,143 @@ class RestoreDownloadPreference : Preference {
             mProgressDialog!!.show()
         }
 
+        /**
+         * Try to restore a download directory. First checks for .ehviewer (SpiderInfo),
+         * then checks for {gid}.cbz files with ComicInfo.xml.
+         */
         fun getRestoreItem(file: UniFile?): RestoreItem? {
             if (null == file || !file.isDirectory()) {
                 return null
             }
-            val siFile = file.findFile(SpiderQueen.SPIDER_INFO_FILENAME) ?: return null
 
-            var `is`: InputStream? = null
-            try {
-                `is` = siFile.openInputStream()
-                val spiderInfo = SpiderInfo.read(`is`) ?: return null
-                val gid = spiderInfo.gid
-                if (mManager.containDownloadInfo(gid)) {
+            // Method 1: Restore from .ehviewer (SpiderInfo) - traditional download
+            val siFile = file.findFile(SpiderQueen.SPIDER_INFO_FILENAME)
+            if (siFile != null) {
+                var `is`: InputStream? = null
+                try {
+                    `is` = siFile.openInputStream()
+                    val spiderInfo = SpiderInfo.read(`is`) ?: return null
+                    val gid = spiderInfo.gid
+                    if (mManager.containDownloadInfo(gid)) {
+                        return null
+                    }
+                    val token = spiderInfo.token
+                    val restoreItem = RestoreItem()
+                    restoreItem.gid = gid
+                    restoreItem.token = token
+                    restoreItem.dirname = file.getName()
+                    return restoreItem
+                } catch (e: IOException) {
+                    FirebaseCrashlytics.getInstance().recordException(e)
                     return null
+                } finally {
+                    IOUtils.closeQuietly(`is`)
                 }
-                val token = spiderInfo.token
-                val restoreItem = RestoreItem()
-                restoreItem.gid = gid
-                restoreItem.token = token
-                restoreItem.dirname = file.getName()
-                return restoreItem
-            } catch (e: IOException) {
-                FirebaseCrashlytics.getInstance().recordException(e)
+            }
+
+            // Method 2: Restore from CBZ file with ComicInfo.xml
+            val cbzFile = findCbzFile(file) ?: return null
+            val comicInfo = ComicInfoHelper.readComicInfoFromCbz(cbzFile) ?: return null
+
+            // Extract gid from filename (format: {gid}.cbz)
+            val cbzName = cbzFile.getName() ?: return null
+            val gid = cbzName.removeSuffix(".cbz").removeSuffix(".zip").toLongOrNull() ?: return null
+
+            if (mManager.containDownloadInfo(gid)) {
                 return null
-            } finally {
-                IOUtils.closeQuietly(`is`)
+            }
+
+            val restoreItem = RestoreItem()
+            restoreItem.gid = gid
+            restoreItem.token = ""
+            restoreItem.title = comicInfo.series ?: cbzName
+            restoreItem.titleJpn = comicInfo.alternateSeries
+            restoreItem.pages = comicInfo.pageCount
+            restoreItem.rating = comicInfo.communityRating
+            restoreItem.simpleLanguage = comicInfo.languageISO?.uppercase()
+            restoreItem.dirname = file.getName()
+
+            // Build simpleTags from ComicInfo
+            val tags = mutableListOf<String>()
+            comicInfo.writers?.forEach { tags.add("artist:$it") }
+            comicInfo.characters?.forEach { tags.add("character:$it") }
+            comicInfo.teams?.forEach { tags.add("parody:$it") }
+            comicInfo.genres?.forEach { tags.add(it) }
+            restoreItem.simpleTags = tags.toTypedArray()
+
+            // Also save GalleryTags to DB for search support
+            saveGalleryTags(gid, tags)
+
+            return restoreItem
+        }
+
+        /**
+         * Find a CBZ or ZIP file inside a directory.
+         */
+        private fun findCbzFile(dir: UniFile): UniFile? {
+            val files = dir.listFiles() ?: return null
+            for (f in files) {
+                val name = f.getName() ?: continue
+                if (name.endsWith(".cbz") || name.endsWith(".zip")) {
+                    return f
+                }
+            }
+            return null
+        }
+
+        /**
+         * Save tags to GalleryTags table so download list search works.
+         */
+        private fun saveGalleryTags(gid: Long, tags: List<String>) {
+            try {
+                val galleryTags = GalleryTags(gid)
+                val artistTags = mutableListOf<String>()
+                val characterTags = mutableListOf<String>()
+                val parodyTags = mutableListOf<String>()
+                val otherTags = mutableListOf<String>()
+                val femaleTags = mutableListOf<String>()
+                val maleTags = mutableListOf<String>()
+                val mixedTags = mutableListOf<String>()
+                val groupTags = mutableListOf<String>()
+                val languageTags = mutableListOf<String>()
+                val cosplayerTags = mutableListOf<String>()
+
+                for (tag in tags) {
+                    val colon = tag.indexOf(':')
+                    if (colon > 0) {
+                        val ns = tag.substring(0, colon).lowercase()
+                        val value = tag.substring(colon + 1)
+                        when (ns) {
+                            "artist" -> artistTags.add(value)
+                            "cosplayer" -> cosplayerTags.add(value)
+                            "character" -> characterTags.add(value)
+                            "parody" -> parodyTags.add(value)
+                            "female" -> femaleTags.add(value)
+                            "male" -> maleTags.add(value)
+                            "mixed" -> mixedTags.add(value)
+                            "group" -> groupTags.add(value)
+                            "language" -> languageTags.add(value)
+                            else -> otherTags.add(tag)
+                        }
+                    } else {
+                        otherTags.add(tag)
+                    }
+                }
+
+                galleryTags.artist = artistTags.joinToString(",").ifEmpty { null }
+                galleryTags.cosplayer = cosplayerTags.joinToString(",").ifEmpty { null }
+                galleryTags.character = characterTags.joinToString(",").ifEmpty { null }
+                galleryTags.parody = parodyTags.joinToString(",").ifEmpty { null }
+                galleryTags.female = femaleTags.joinToString(",").ifEmpty { null }
+                galleryTags.male = maleTags.joinToString(",").ifEmpty { null }
+                galleryTags.mixed = mixedTags.joinToString(",").ifEmpty { null }
+                galleryTags.group = groupTags.joinToString(",").ifEmpty { null }
+                galleryTags.language = languageTags.joinToString(",").ifEmpty { null }
+                galleryTags.other = otherTags.joinToString(",").ifEmpty { null }
+
+                EhDB.insertGalleryTags(galleryTags)
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
 
@@ -149,6 +263,10 @@ class RestoreDownloadPreference : Preference {
             val total = files.size
             publishProgress(0, total)
 
+            // Separate CBZ-based items (skip API) from .ehviewer-based items (need API)
+            val cbzItems = mutableListOf<RestoreItem>()
+            val spiderItems = mutableListOf<RestoreItem>()
+
             for (i in 0..<total) {
                 if (mCancelled.get()) {
                     return null
@@ -156,29 +274,41 @@ class RestoreDownloadPreference : Preference {
                 val file = files[i]
                 val restoreItem = getRestoreItem(file)
                 if (restoreItem != null) {
-                    restoreItemList.add(restoreItem)
+                    // Items with title already set are from CBZ (no API needed)
+                    // Items without title are from .ehviewer (need API fill)
+                    if (restoreItem.title != null) {
+                        cbzItems.add(restoreItem)
+                    } else {
+                        spiderItems.add(restoreItem)
+                    }
                 }
                 publishProgress(i + 1, total)
             }
 
-            if (restoreItemList.isEmpty()) {
+            val allItems = (cbzItems + spiderItems).toMutableList()
+
+            if (allItems.isEmpty()) {
                 return Collections.EMPTY_LIST
             }
 
-            publishProgress(-1, -1)
-
-            return try {
-                EhEngine.fillGalleryListByApi(
-                    null,
-                    mHttpClient,
-                    ArrayList<GalleryInfo?>(restoreItemList),
-                    EhUrl.getReferer()
-                )
-            } catch (e: Throwable) {
-                throwIfFatal(e)
-                e.printStackTrace()
-                null
+            // Fill spider-based items via API
+            if (spiderItems.isNotEmpty()) {
+                publishProgress(-1, -1)
+                try {
+                    EhEngine.fillGalleryListByApi(
+                        null,
+                        mHttpClient,
+                        ArrayList<GalleryInfo?>(spiderItems),
+                        EhUrl.getReferer()
+                    )
+                } catch (e: Throwable) {
+                    throwIfFatal(e)
+                    e.printStackTrace()
+                    // API failed, still return CBZ items
+                }
             }
+
+            return allItems
         }
 
         private fun publishProgress(progress: Int, max: Int) {
@@ -251,9 +381,9 @@ class RestoreDownloadPreference : Preference {
                     val n = list.size
                     while (i < n) {
                         val item = list.get(i)
-                        // Avoid failed gallery info
+                        // Avoid failed gallery info (title is null means API failed)
                         if (null != item.title) {
-                            // Put to download
+                            // Put to download (this saves DownloadInfo with simpleTags to DB)
                             mManager.addDownload(item, null)
                             // Put download dir to DB
                             EhDB.putDownloadDirname(item.gid, item.dirname)

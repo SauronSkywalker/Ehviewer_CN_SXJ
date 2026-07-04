@@ -44,6 +44,7 @@
     <string name="no_blicklist">这里是黑名单</string>
 
     <string name="settings_download_clean_invalid_download_confirm">确定清空无效的下载项？</string>
+    <string name="settings_download_convert_to_cbz_confirm">确定将已完成的零散图片整理为 CBZ 压缩包？此操作不可撤销。</string>
     <string name="settings_download_cleaning">正在清理下载项</string>
     <string name="settings_download_clean_invalid_done">完成清理 %d 个下载项</string>
     <string name="settings_download_clean_invalid_no_invalid">没有需要清空的下载项</string>
@@ -693,6 +694,11 @@
     <string name="settings_download_download_order_by_asc_summary">Download in sequence when downloading all galleries</string>
     <string name="settings_download_sync_while_reading">Sync download while reading</string>
     <string name="settings_download_sync_while_reading_summary">When browsing an undownloaded gallery, automatically save viewed images to the download directory</string>
+
+    <string name="settings_download_save_as_cbz">Save as CBZ</string>
+    <string name="settings_download_save_as_cbz_summary">Package downloaded images into CBZ archive (experimental)</string>
+    <string name="settings_download_archive_metadata">Archive metadata</string>
+    <string name="settings_download_archive_metadata_summary">Generate ComicInfo.xml metadata in archive</string>
     <string name="settings_download_restore_download_items">Restore download items</string>
     <string name="settings_download_restore_download_items_summary">Restore all download items in download location</string>
     <string name="settings_download_restoring">Restoring</string>
@@ -705,6 +711,18 @@
     <string name="settings_download_clean_redundancy_done">Redundancy cleaning completed, clean-up %d items totally</string>
     <string name="settings_download_clean_invalid_download_summary">Remove download items which are invalid</string>
     <string name="settings_download_clean_invalid_download">Clean invaild download</string>
+
+    <string name="settings_download_convert_to_cbz">Convert downloads to CBZ</string>
+    <string name="settings_download_convert_to_cbz_summary">Package downloaded loose images into CBZ archives to save space (experimental)</string>
+    <string name="settings_download_convert_to_cbz_started">Converting…</string>
+    <string name="settings_download_convert_to_cbz_success">Successfully converted %d items</string>
+    <string name="settings_download_convert_to_cbz_failed">Conversion failed: %s</string>
+
+    <string name="settings_download_reload_metadata">Reload metadata</string>
+    <string name="settings_download_reload_metadata_summary">Regenerate ComicInfo.xml for downloaded items (experimental)</string>
+    <string name="settings_download_reload_metadata_started">Reloading metadata…</string>
+    <string name="settings_download_reload_metadata_success">Reloaded %d items successfully</string>
+    <string name="settings_download_reload_metadata_failed">Reload metadata failed: %s</string>
 
     <string name="settings_advanced">Advanced</string>
     <string name="settings_advanced_save_parse_error_body">Save html content when parsing error</string>

@@ -37,6 +37,7 @@ import com.hippo.ehviewer.dao.DownloadLabel;
 import com.hippo.ehviewer.spider.SpiderDen;
 import com.hippo.ehviewer.spider.SpiderInfo;
 import com.hippo.ehviewer.spider.SpiderQueen;
+import com.hippo.ehviewer.util.ComicInfoHelper;
 import com.hippo.lib.image.Image;
 //import com.hippo.lib.image.Image1;
 import com.hippo.unifile.UniFile;
@@ -1279,6 +1280,12 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                     }
                     // Update in DB
                     EhDB.putDownloadInfo(info);
+
+                    // Package as CBZ if enabled and all pages downloaded
+                    if (info.legacy == 0 && Settings.getSaveAsCbz()) {
+                        packageAsCbz(info, spider);
+                    }
+
                     // Notify
                     if (mDownloadListener != null) {
                         mDownloadListener.onFinish(info);
@@ -1409,6 +1416,131 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
 //            return  > 0 ? -1 : 1;
         }
     };
+
+    /**
+     * Package a completed download as CBZ archive.
+     * Called after all pages are successfully downloaded.
+     */
+    private void packageAsCbz(DownloadInfo info, SpiderQueen spider) {
+        IoThreadPoolExecutor.getInstance().execute(() -> {
+            try {
+                UniFile downloadDir = SpiderDen.getExistingGalleryDownloadDir(info);
+                if (downloadDir == null) {
+                    Log.w(TAG, "Cannot find download dir for CBZ packaging: " + info.gid);
+                    return;
+                }
+
+                // Check if CBZ already exists
+                String cbzName = info.gid + ".cbz";
+                UniFile cbzFile = downloadDir.findFile(cbzName);
+                if (cbzFile != null) {
+                    Log.d(TAG, "CBZ already exists: " + cbzName);
+                    return;
+                }
+
+                // List image files (skip hidden files like .ehviewer, .nomedia)
+                UniFile[] files = downloadDir.listFiles();
+                if (files == null || files.length == 0) return;
+
+                // Generate ComicInfo.xml if metadata is enabled
+                if (Settings.getArchiveMetadata()) {
+                    ComicInfoHelper.writeComicInfo(downloadDir, info);
+                }
+
+                // Create CBZ file
+                UniFile newCbzFile = downloadDir.createFile(cbzName);
+                if (newCbzFile == null) {
+                    Log.e(TAG, "Failed to create CBZ file: " + cbzName);
+                    // Clean up ComicInfo.xml if we created it
+                    if (Settings.getArchiveMetadata()) {
+                        UniFile ciFile = downloadDir.findFile("ComicInfo.xml");
+                        if (ciFile != null) ciFile.delete();
+                    }
+                    return;
+                }
+
+                boolean success = false;
+                try {
+                    // Collect image files sorted by index
+                    java.util.List<UniFile> imageFiles = new java.util.ArrayList<>();
+                    for (UniFile f : files) {
+                        String name = f.getName();
+                        if (name == null || name.startsWith(".") || name.equals(cbzName)) continue;
+                        imageFiles.add(f);
+                    }
+
+                    // Sort by name for consistent ordering
+                    imageFiles.sort((a, b) -> {
+                        String na = a.getName() != null ? a.getName() : "";
+                        String nb = b.getName() != null ? b.getName() : "";
+                        return na.compareTo(nb);
+                    });
+
+                    // Package into CBZ
+                    try (java.io.OutputStream os = newCbzFile.openOutputStream();
+                         java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(os)) {
+                        byte[] buffer = new byte[8192];
+                        for (UniFile imageFile : imageFiles) {
+                            String name = imageFile.getName();
+                            if (name == null) continue;
+                            zos.putNextEntry(new java.util.zip.ZipEntry(name));
+                            try (java.io.InputStream is = imageFile.openInputStream()) {
+                                int len;
+                                while ((len = is.read(buffer)) > 0) {
+                                    zos.write(buffer, 0, len);
+                                }
+                            }
+                            zos.closeEntry();
+                        }
+
+                        // Include ComicInfo.xml if generated
+                        if (Settings.getArchiveMetadata()) {
+                            UniFile ciFile = downloadDir.findFile("ComicInfo.xml");
+                            if (ciFile != null) {
+                                zos.putNextEntry(new java.util.zip.ZipEntry("ComicInfo.xml"));
+                                try (java.io.InputStream is = ciFile.openInputStream()) {
+                                    int len;
+                                    while ((len = is.read(buffer)) > 0) {
+                                        zos.write(buffer, 0, len);
+                                    }
+                                }
+                                zos.closeEntry();
+                            }
+                        }
+                    }
+
+                    success = true;
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to package CBZ for gid=" + info.gid, e);
+                }
+
+                if (success) {
+                    // Reclaim space: delete all loose files
+                    for (UniFile f : files) {
+                        String name = f.getName();
+                        if (name == null || name.equals(cbzName)) continue;
+                        if (Settings.getArchiveMetadata() && "ComicInfo.xml".equals(name)) continue;
+                        // Don't delete .nomedia, only image files and .ehviewer
+                        if (!name.startsWith(".") || ".ehviewer".equals(name)) {
+                            f.delete();
+                        }
+                    }
+                    // Delete ComicInfo.xml as it's now inside the CBZ
+                    if (Settings.getArchiveMetadata()) {
+                        UniFile ciFile = downloadDir.findFile("ComicInfo.xml");
+                        if (ciFile != null) ciFile.delete();
+                    }
+                    Log.d(TAG, "Successfully packaged CBZ for gid=" + info.gid);
+                } else {
+                    // Failed: clean up partial CBZ
+                    newCbzFile.delete();
+                    Log.w(TAG, "Failed to package CBZ for gid=" + info.gid + ", keeping loose files");
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error in CBZ packaging for gid=" + info.gid, e);
+            }
+        });
+    }
 
     public interface DownloadInfoListener {
 

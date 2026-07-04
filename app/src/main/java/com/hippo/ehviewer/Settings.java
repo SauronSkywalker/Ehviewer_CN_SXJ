@@ -866,6 +866,28 @@ public class Settings {
         putBoolean(KEY_DOWNLOAD_ORIGIN_IMAGE, value);
     }
 
+    private static final String KEY_SAVE_AS_CBZ = "save_as_cbz";
+    private static final boolean DEFAULT_SAVE_AS_CBZ = false;
+
+    public static boolean getSaveAsCbz() {
+        return getBoolean(KEY_SAVE_AS_CBZ, DEFAULT_SAVE_AS_CBZ);
+    }
+
+    public static void putSaveAsCbz(boolean value) {
+        putBoolean(KEY_SAVE_AS_CBZ, value);
+    }
+
+    private static final String KEY_ARCHIVE_METADATA = "archive_metadata";
+    private static final boolean DEFAULT_ARCHIVE_METADATA = true;
+
+    public static boolean getArchiveMetadata() {
+        return getBoolean(KEY_ARCHIVE_METADATA, DEFAULT_ARCHIVE_METADATA);
+    }
+
+    public static void putArchiveMetadata(boolean value) {
+        putBoolean(KEY_ARCHIVE_METADATA, value);
+    }
+
     /********************
      ****** Favorites
      ********************/

@@ -36,8 +36,10 @@ import com.hippo.ehviewer.R;
 import com.hippo.ehviewer.Settings;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.download.DownloadManager;
+import com.hippo.ehviewer.spider.SpiderDen;
 import com.hippo.ehviewer.ui.CommonOperations;
 import com.hippo.ehviewer.ui.DirPickerActivity;
+import com.hippo.ehviewer.util.ComicInfoHelper;
 import com.hippo.unifile.UniFile;
 import com.hippo.util.ExceptionUtils;
 import com.hippo.yorozuya.IOUtils;
@@ -66,6 +68,8 @@ public class DownloadFragment extends PreferenceFragmentCompat implements
     public static final String KEY_EXPORT_DOWNLOAD_ITEMS = "export_download_items";
     public static final String KEY_IMPORT_DOWNLOAD_ITEMS = "import_download_items";
     public static final String KEY_CLEAN_INVALID_DOWNLOAD = "clean_invalid_download";
+    public static final String KEY_CONVERT_TO_CBZ = "convert_to_cbz";
+    public static final String KEY_RELOAD_METADATA = "reload_metadata";
 
     @Nullable
     private Preference mDownloadLocation;
@@ -82,6 +86,8 @@ public class DownloadFragment extends PreferenceFragmentCompat implements
         Preference exportDownloadItems = findPreference(KEY_EXPORT_DOWNLOAD_ITEMS);
         Preference importDownloadItems = findPreference(KEY_IMPORT_DOWNLOAD_ITEMS);
         Preference cleanInvalidDownload = findPreference(KEY_CLEAN_INVALID_DOWNLOAD);
+        Preference convertToCbz = findPreference(KEY_CONVERT_TO_CBZ);
+        Preference reloadMetadata = findPreference(KEY_RELOAD_METADATA);
         Preference preloadImage = findPreference("preload_image");
         Preference imageResolutionPref = findPreference(Settings.KEY_IMAGE_RESOLUTION);
 
@@ -128,6 +134,12 @@ public class DownloadFragment extends PreferenceFragmentCompat implements
         if (cleanInvalidDownload != null) {
             cleanInvalidDownload.setOnPreferenceClickListener(this);
         }
+        if (convertToCbz != null) {
+            convertToCbz.setOnPreferenceClickListener(this);
+        }
+        if (reloadMetadata != null) {
+            reloadMetadata.setOnPreferenceClickListener(this);
+        }
     }
 
     @Override
@@ -171,6 +183,22 @@ public class DownloadFragment extends PreferenceFragmentCompat implements
                     .setTitle(R.string.settings_download_clean_invalid_download)
                     .setMessage(R.string.settings_download_clean_invalid_download_confirm)
                     .setPositiveButton(android.R.string.ok, (dialog, which) -> new CleanInvalidDownloadTask(this).execute())
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+            return true;
+        } else if (KEY_CONVERT_TO_CBZ.equals(key)) {
+            new AlertDialog.Builder(requireActivity())
+                    .setTitle(R.string.settings_download_convert_to_cbz)
+                    .setMessage(R.string.settings_download_convert_to_cbz_confirm)
+                    .setPositiveButton(android.R.string.ok, (dialog, which) -> new ConvertToCbzTask(this).execute())
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+            return true;
+        } else if (KEY_RELOAD_METADATA.equals(key)) {
+            new AlertDialog.Builder(requireActivity())
+                    .setTitle(R.string.settings_download_reload_metadata)
+                    .setMessage("This will regenerate ComicInfo.xml for all completed downloads. Continue?")
+                    .setPositiveButton(android.R.string.ok, (dialog, which) -> new ReloadMetadataTask(this).execute())
                     .setNegativeButton(android.R.string.cancel, null)
                     .show();
             return true;
@@ -637,6 +665,296 @@ public class DownloadFragment extends PreferenceFragmentCompat implements
                 } catch (IOException e) {
                     // Ignore
                 }
+            }
+        }
+    }
+
+    private static class ConvertToCbzTask extends AsyncTask<Void, Integer, Integer> {
+
+        private final WeakReference<DownloadFragment> mFragment;
+        private ProgressDialog mProgressDialog;
+
+        public ConvertToCbzTask(DownloadFragment fragment) {
+            mFragment = new WeakReference<>(fragment);
+        }
+
+        @Override
+        protected void onPreExecute() {
+            DownloadFragment fragment = mFragment.get();
+            if (fragment == null || fragment.getActivity() == null) return;
+            mProgressDialog = new ProgressDialog(fragment.getActivity());
+            mProgressDialog.setTitle(R.string.settings_download_convert_to_cbz);
+            mProgressDialog.setIndeterminate(false);
+            mProgressDialog.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
+            mProgressDialog.setCancelable(false);
+            mProgressDialog.show();
+        }
+
+        @Override
+        protected Integer doInBackground(Void... voids) {
+            DownloadFragment fragment = mFragment.get();
+            if (fragment == null) return 0;
+            DownloadManager downloadManager = EhApplication.getDownloadManager(fragment.requireActivity());
+            java.util.List<GalleryInfo> list = downloadManager.getDownloadInfoList();
+            if (list == null) return 0;
+
+            int total = list.size();
+            int converted = 0;
+            publishProgress(0, total);
+
+            for (int i = 0; i < total; i++) {
+                if (isCancelled()) break;
+                GalleryInfo gi = list.get(i);
+                if (!(gi instanceof com.hippo.ehviewer.dao.DownloadInfo)) continue;
+                com.hippo.ehviewer.dao.DownloadInfo info = (com.hippo.ehviewer.dao.DownloadInfo) gi;
+                if (info.state != com.hippo.ehviewer.dao.DownloadInfo.STATE_FINISH) {
+                    publishProgress(i + 1, total);
+                    continue;
+                }
+
+                UniFile downloadDir = SpiderDen.getExistingGalleryDownloadDir(info);
+                if (downloadDir == null) {
+                    publishProgress(i + 1, total);
+                    continue;
+                }
+                String cbzName = info.gid + ".cbz";
+                if (downloadDir.findFile(cbzName) != null) {
+                    publishProgress(i + 1, total);
+                    continue;
+                }
+
+                try {
+                    if (Settings.getArchiveMetadata()) {
+                        ComicInfoHelper.writeComicInfo(downloadDir, info);
+                    }
+
+                    UniFile[] files = downloadDir.listFiles();
+                    if (files == null || files.length == 0) {
+                        publishProgress(i + 1, total);
+                        continue;
+                    }
+
+                    java.util.List<UniFile> imageFiles = new java.util.ArrayList<>();
+                    for (UniFile f : files) {
+                        String name = f.getName();
+                        if (name == null || name.startsWith(".") || name.equals(cbzName)) continue;
+                        imageFiles.add(f);
+                    }
+                    if (imageFiles.isEmpty()) {
+                        publishProgress(i + 1, total);
+                        continue;
+                    }
+
+                    imageFiles.sort((a, b) -> {
+                        String na = a.getName() != null ? a.getName() : "";
+                        String nb = b.getName() != null ? b.getName() : "";
+                        return na.compareTo(nb);
+                    });
+
+                    UniFile cbzFile = downloadDir.createFile(cbzName);
+                    if (cbzFile == null) {
+                        publishProgress(i + 1, total);
+                        continue;
+                    }
+
+                    boolean success = false;
+                    try (java.io.OutputStream os = cbzFile.openOutputStream();
+                         java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(os)) {
+                        byte[] buffer = new byte[8192];
+                        for (UniFile imageFile : imageFiles) {
+                            String name = imageFile.getName();
+                            if (name == null) continue;
+                            zos.putNextEntry(new java.util.zip.ZipEntry(name));
+                            try (java.io.InputStream is = imageFile.openInputStream()) {
+                                int len;
+                                while ((len = is.read(buffer)) > 0) {
+                                    zos.write(buffer, 0, len);
+                                }
+                            }
+                            zos.closeEntry();
+                        }
+                        if (Settings.getArchiveMetadata()) {
+                            UniFile ciFile = downloadDir.findFile("ComicInfo.xml");
+                            if (ciFile != null) {
+                                zos.putNextEntry(new java.util.zip.ZipEntry("ComicInfo.xml"));
+                                try (java.io.InputStream is = ciFile.openInputStream()) {
+                                    int len;
+                                    while ((len = is.read(buffer)) > 0) {
+                                        zos.write(buffer, 0, len);
+                                    }
+                                }
+                                zos.closeEntry();
+                            }
+                        }
+                        success = true;
+                    } catch (Exception e) {
+                        cbzFile.delete();
+                        android.util.Log.e("ConvertToCbz", "Failed for gid=" + info.gid, e);
+                    }
+
+                    if (success) {
+                        for (UniFile f : files) {
+                            String name = f.getName();
+                            if (name == null || name.equals(cbzName)) continue;
+                            if (Settings.getArchiveMetadata() && "ComicInfo.xml".equals(name)) continue;
+                            if (!name.startsWith(".") || ".ehviewer".equals(name)) {
+                                f.delete();
+                            }
+                        }
+                        if (Settings.getArchiveMetadata()) {
+                            UniFile ciFile = downloadDir.findFile("ComicInfo.xml");
+                            if (ciFile != null) ciFile.delete();
+                        }
+                        converted++;
+                    }
+                } catch (Exception e) {
+                    android.util.Log.e("ConvertToCbz", "Error for gid=" + info.gid, e);
+                }
+
+                publishProgress(i + 1, total);
+            }
+            return converted;
+        }
+
+        @Override
+        protected void onProgressUpdate(Integer... values) {
+            if (mProgressDialog != null) {
+                mProgressDialog.setMax(values[1]);
+                mProgressDialog.setProgress(values[0]);
+            }
+        }
+
+        @Override
+        protected void onPostExecute(Integer result) {
+            DownloadFragment fragment = mFragment.get();
+            if (mProgressDialog != null) {
+                if (fragment != null && fragment.isAdded() && fragment.getActivity() != null) {
+                    try {
+                        if (mProgressDialog.isShowing()) {
+                            mProgressDialog.dismiss();
+                        }
+                    } catch (IllegalArgumentException e) {
+                        ExceptionUtils.throwIfFatal(e);
+                    }
+                }
+                mProgressDialog = null;
+            }
+            if (fragment == null || fragment.getActivity() == null) return;
+            if (result > 0) {
+                Toast.makeText(fragment.getActivity(),
+                        fragment.getString(R.string.settings_download_convert_to_cbz_success, result),
+                        Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(fragment.getActivity(), R.string.settings_download_convert_to_cbz_failed,
+                        Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    private static class ReloadMetadataTask extends AsyncTask<Void, Integer, Integer> {
+
+        private final WeakReference<DownloadFragment> mFragment;
+        private ProgressDialog mProgressDialog;
+
+        public ReloadMetadataTask(DownloadFragment fragment) {
+            mFragment = new WeakReference<>(fragment);
+        }
+
+        @Override
+        protected void onPreExecute() {
+            DownloadFragment fragment = mFragment.get();
+            if (fragment == null || fragment.getActivity() == null) return;
+            mProgressDialog = new ProgressDialog(fragment.getActivity());
+            mProgressDialog.setTitle(R.string.settings_download_reload_metadata);
+            mProgressDialog.setIndeterminate(false);
+            mProgressDialog.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
+            mProgressDialog.setCancelable(false);
+            mProgressDialog.show();
+        }
+
+        @Override
+        protected Integer doInBackground(Void... voids) {
+            DownloadFragment fragment = mFragment.get();
+            if (fragment == null) return 0;
+            DownloadManager downloadManager = EhApplication.getDownloadManager(fragment.requireActivity());
+            java.util.List<GalleryInfo> list = downloadManager.getDownloadInfoList();
+            if (list == null) return 0;
+
+            int total = list.size();
+            int updated = 0;
+            publishProgress(0, total);
+
+            for (int i = 0; i < total; i++) {
+                if (isCancelled()) break;
+                GalleryInfo gi = list.get(i);
+                if (!(gi instanceof com.hippo.ehviewer.dao.DownloadInfo)) continue;
+                com.hippo.ehviewer.dao.DownloadInfo info = (com.hippo.ehviewer.dao.DownloadInfo) gi;
+                if (info.state != com.hippo.ehviewer.dao.DownloadInfo.STATE_FINISH) {
+                    publishProgress(i + 1, total);
+                    continue;
+                }
+
+                try {
+                    UniFile downloadDir = SpiderDen.getExistingGalleryDownloadDir(info);
+                    if (downloadDir == null) {
+                        publishProgress(i + 1, total);
+                        continue;
+                    }
+
+                    // Write ComicInfo.xml to directory
+                    ComicInfoHelper.writeComicInfo(downloadDir, info);
+
+                    // If CBZ exists, update the ComicInfo.xml inside it
+                    String cbzName = info.gid + ".cbz";
+                    UniFile cbzFile = downloadDir.findFile(cbzName);
+                    if (cbzFile != null) {
+                        ComicInfoHelper.updateComicInfoInCbz(cbzFile, info);
+                        // Delete the loose ComicInfo.xml now that it's inside CBZ
+                        UniFile ciFile = downloadDir.findFile("ComicInfo.xml");
+                        if (ciFile != null) ciFile.delete();
+                    }
+
+                    updated++;
+                } catch (Exception e) {
+                    android.util.Log.e("ReloadMetadata", "Error for gid=" + info.gid, e);
+                }
+
+                publishProgress(i + 1, total);
+            }
+            return updated;
+        }
+
+        @Override
+        protected void onProgressUpdate(Integer... values) {
+            if (mProgressDialog != null) {
+                mProgressDialog.setMax(values[1]);
+                mProgressDialog.setProgress(values[0]);
+            }
+        }
+
+        @Override
+        protected void onPostExecute(Integer result) {
+            DownloadFragment fragment = mFragment.get();
+            if (mProgressDialog != null) {
+                if (fragment != null && fragment.isAdded() && fragment.getActivity() != null) {
+                    try {
+                        if (mProgressDialog.isShowing()) {
+                            mProgressDialog.dismiss();
+                        }
+                    } catch (IllegalArgumentException e) {
+                        ExceptionUtils.throwIfFatal(e);
+                    }
+                }
+                mProgressDialog = null;
+            }
+            if (fragment == null || fragment.getActivity() == null) return;
+            if (result > 0) {
+                Toast.makeText(fragment.getActivity(),
+                        fragment.getString(R.string.settings_download_reload_metadata_success, result),
+                        Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(fragment.getActivity(), R.string.settings_download_reload_metadata_failed,
+                        Toast.LENGTH_SHORT).show();
             }
         }
     }
