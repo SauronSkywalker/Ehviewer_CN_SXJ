@@ -184,7 +184,7 @@ public final class ComicInfoHelper {
      */
     public static boolean updateComicInfoInCbz(UniFile cbzFile, GalleryInfo info) {
         if (cbzFile == null || info == null) return false;
-        UniFile parent = cbzFile.getParent();
+        UniFile parent = cbzFile.getParentFile();
         if (parent == null) return false;
 
         UniFile tempFile = parent.createFile(cbzFile.getName() + ".tmp");

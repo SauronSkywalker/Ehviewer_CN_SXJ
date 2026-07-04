@@ -1422,7 +1422,7 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
      * Called after all pages are successfully downloaded.
      */
     private void packageAsCbz(DownloadInfo info, SpiderQueen spider) {
-        IoThreadPoolExecutor.getInstance().execute(() -> {
+        IoThreadPoolExecutor.Companion.getInstance().execute(() -> {
             try {
                 UniFile downloadDir = SpiderDen.getExistingGalleryDownloadDir(info);
                 if (downloadDir == null) {
